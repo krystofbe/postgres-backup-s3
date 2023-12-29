@@ -3,7 +3,7 @@
 set -eu
 set -o pipefail
 
-source ./env.sh
+source /env.sh
 
 timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
 
