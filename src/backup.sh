@@ -44,17 +44,38 @@ rm "$local_file"
 
 echo "Backup complete."
 
-if [ -n "$BACKUP_KEEP_DAYS" ]; then
-  sec=$((86400 * BACKUP_KEEP_DAYS))
-  date_from_remove=$(date -d "@$(($(date +%s) - sec))" +%Y-%m-%d)
-  backups_query="Contents[?LastModified<='${date_from_remove} 00:00:00'].{Key: Key}"
+# Calculate the time limits for deletion
+current_time=$(date +%s)
+days_in_seconds=$((86400 * BACKUP_KEEP_DAYS))
+hours_in_seconds=$((3600 * BACKUP_KEEP_HOURS))
 
-  echo "Removing old backups from $S3_BUCKET..."
+# Remove backups older than BACKUP_KEEP_DAYS
+if [ -n "$BACKUP_KEEP_DAYS" ]; then
+  date_from_remove_days=$(date -d "@$((current_time - days_in_seconds))" +%Y-%m-%d)
+  daily_backups_query="Contents[?LastModified<='${date_from_remove_days} 00:00:00'].{Key: Key}"
+
+  echo "Removing old daily backups from $S3_BUCKET..."
   aws $aws_args s3api list-objects \
     --bucket "${S3_BUCKET}" \
     --prefix "${S3_PREFIX}" \
-    --query "${backups_query}" \
+    --query "${daily_backups_query}" \
     --output text |
-    xargs -n1 -t -I 'KEY' aws $aws_args s3 rm s3://"${S3_BUCKET}"/'KEY'
-  echo "Removal complete."
+    xargs -r -n1 -t -I 'KEY' aws $aws_args s3 rm s3://"${S3_BUCKET}"/'KEY'
+  echo "Daily backup removal complete."
+fi
+
+# Remove hourly backups that are older than BACKUP_KEEP_HOURS but newer than BACKUP_KEEP_DAYS
+if [ -n "$BACKUP_KEEP_HOURS" ]; then
+  date_from_remove_hours=$(date -d "@$((current_time - hours_in_seconds))" +%Y-%m-%d-%H)
+  date_to_keep_hours=$(date -d "@$((current_time - days_in_seconds))" +%Y-%m-%d)
+  hourly_backups_query="Contents[?LastModified<='${date_from_remove_hours}' && LastModified>='${date_to_keep_hours}'].{Key: Key}"
+
+  echo "Removing old hourly backups from $S3_BUCKET..."
+  aws $aws_args s3api list-objects \
+    --bucket "${S3_BUCKET}" \
+    --prefix "${S3_PREFIX}" \
+    --query "${hourly_backups_query}" \
+    --output text |
+    xargs -r -n1 -t -I 'KEY' aws $aws_args s3 rm s3://"${S3_BUCKET}"/'KEY'
+  echo "Hourly backup removal complete."
 fi

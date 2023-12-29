@@ -16,6 +16,7 @@ services:
     environment:
       SCHEDULE: '@weekly'     # optional
       BACKUP_KEEP_DAYS: 7     # optional
+      BACKUP_KEEP_HOURS: 72   # optional
       PASSPHRASE: passphrase  # optional
       S3_REGION: region
       S3_ACCESS_KEY_ID: key
@@ -33,6 +34,7 @@ services:
 - If `PASSPHRASE` is provided, the backup will be encrypted using GPG.
 - Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc.
 - If `BACKUP_KEEP_DAYS` is set, backups older than this many days will be deleted from S3.
+- If `BACKUP_KEEP_HOURS` is set, hourly backups older than this many hours will be deleted from S3.
 - Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
 
 ## Restore
