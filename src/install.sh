@@ -11,17 +11,15 @@ apk add postgresql-client
 # install gpg
 apk add gnupg
 
+# install aws-cli
 apk add aws-cli
 
-# install go-cron
-apk add curl
-curl -L https://github.com/ivoronin/go-cron/releases/download/v0.0.5/go-cron_0.0.5_linux_${TARGETARCH}.tar.gz -O
-tar xvf go-cron_0.0.5_linux_${TARGETARCH}.tar.gz
-rm go-cron_0.0.5_linux_${TARGETARCH}.tar.gz
-mv go-cron /usr/local/bin/go-cron
-chmod u+x /usr/local/bin/go-cron
-apk del curl
-
+# install go-crond
+GOCROND_VERSION=22.9.1
+GOCRON_OS=linux
+GOCRON_ARCH=amd64
+wget -O /usr/local/bin/go-crond "https://github.com/webdevops/go-crond/releases/download/${GOCROND_VERSION}/go-crond.${GOCRON_OS}.${GOCRON_ARCH}"
+chmod +x /usr/local/bin/go-crond
 
 # cleanup
 rm -rf /var/cache/apk/*
