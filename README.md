@@ -25,6 +25,7 @@ services:
       S3_PREFIX: backup
       POSTGRES_HOST: postgres
       POSTGRES_DATABASE: dbname
+      POSTGRES_BACKUP_ALL: true
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
 ```
@@ -33,8 +34,9 @@ services:
 - The `SCHEDULE` variable determines backup frequency. See go-cron schedules documentation [here](http://godoc.org/github.com/robfig/cron#hdr-Predefined_schedules). Omit to run the backup immediately and then exit.
 - If `PASSPHRASE` is provided, the backup will be encrypted using GPG.
 - Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc.
-- If `BACKUP_KEEP_DAYS` is set, backups older than this many days will be deleted from S3.
-- If `BACKUP_KEEP_HOURS` is set, hourly backups older than this many hours will be deleted from S3.
+- The POSTGRES_BACKUP_ALL variable allows backing up all databases when set to "true".
+- If BACKUP_KEEP_DAYS is set, backups older than this many days will be deleted from S3.
+- If BACKUP_KEEP_HOURS is set, hourly backups older than this many hours will be deleted from S3.
 - Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
 
 ## Restore
