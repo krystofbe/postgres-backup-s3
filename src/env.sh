@@ -3,7 +3,7 @@ if [ -z "$S3_BUCKET" ]; then
   exit 1
 fi
 
-if [ -z "$POSTGRES_DATABASE" ]; then
+if [ "$POSTGRES_BACKUP_ALL" != "true" ] && [ -z "$POSTGRES_DATABASE" ]; then
   echo "You need to set the POSTGRES_DATABASE environment variable."
   exit 1
 fi
@@ -34,7 +34,6 @@ if [ -z "$S3_ENDPOINT" ]; then
 else
   aws_args="--endpoint-url $S3_ENDPOINT"
 fi
-
 
 if [ -n "$S3_ACCESS_KEY_ID" ]; then
   export AWS_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID

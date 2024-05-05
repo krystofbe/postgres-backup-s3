@@ -7,40 +7,51 @@ source /env.sh
 
 timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
 
+# Function to dump a single database
+dump_database() {
+  db_name=$1
+  echo "Creating backup of $db_name database..."
+  SRC_FILE="db_${db_name}_${timestamp}.dump"
+  DEST_FILE="${db_name}_${timestamp}.dump"
+  pg_dump --format=custom -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$db_name" $PGDUMP_EXTRA_OPTS >"$SRC_FILE"
+
+  process_file "$SRC_FILE" "$DEST_FILE"
+}
+
+# Function to process and upload a file
+process_file() {
+  src_file=$1
+  dest_file=$2
+  s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/${dest_file}"
+
+  if [ -n "$PASSPHRASE" ]; then
+    echo "Encrypting backup of $src_file..."
+    gpg --symmetric --batch --passphrase "$PASSPHRASE" "$src_file"
+    rm "$src_file"
+    local_file="${src_file}.gpg"
+    s3_uri="${s3_uri_base}.gpg"
+  else
+    local_file="$src_file"
+    s3_uri="$s3_uri_base"
+  fi
+
+  echo "Uploading $dest_file to $S3_BUCKET..."
+  aws $aws_args s3 cp "$local_file" "$s3_uri"
+  rm "$local_file"
+}
+
 # Check if POSTGRES_BACKUP_ALL is set to "true"
 if [ "${POSTGRES_BACKUP_ALL}" = "true" ]; then
-  echo "Creating dump of all databases..."
-  SRC_FILE="alldb_${timestamp}.dump"
-  DEST_FILE="postgres_${timestamp}.dump"
+  echo "Creating dump of all databases individually..."
+  # Get list of all databases
+  databases=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;")
 
-  # Dump all databases
-  pg_dumpall -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" $PGDUMP_EXTRA_OPTS >"$SRC_FILE"
+  for db in $databases; do
+    dump_database $db
+  done
 else
-  echo "Creating backup of $POSTGRES_DATABASE database..."
-  SRC_FILE="db_${timestamp}.dump"
-  DEST_FILE="${POSTGRES_DATABASE}_${timestamp}.dump"
-
-  # Dump the specified database
-  pg_dump --format=custom -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DATABASE" $PGDUMP_EXTRA_OPTS >"$SRC_FILE"
+  dump_database "$POSTGRES_DATABASE"
 fi
-
-s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/${DEST_FILE}"
-
-if [ -n "$PASSPHRASE" ]; then
-  echo "Encrypting backup..."
-  rm -f "${SRC_FILE}.gpg"
-  gpg --symmetric --batch --passphrase "$PASSPHRASE" "$SRC_FILE"
-  rm "$SRC_FILE"
-  local_file="${SRC_FILE}.gpg"
-  s3_uri="${s3_uri_base}.gpg"
-else
-  local_file="$SRC_FILE"
-  s3_uri="$s3_uri_base"
-fi
-
-echo "Uploading backup to $S3_BUCKET..."
-aws $aws_args s3 cp "$local_file" "$s3_uri"
-rm "$local_file"
 
 echo "Backup complete."
 

@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: password
 
   backup:
-    image: eeshugerman/postgres-backup-s3:16
+    image: krystofbe/postgres-backup-s3:16
     environment:
       SCHEDULE: '@weekly'     # optional
       BACKUP_KEEP_DAYS: 7     # optional
@@ -28,6 +28,7 @@ services:
       POSTGRES_BACKUP_ALL: true
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
+      POSTGRES_BACKUP_ALL: true     # optional, set to 'true' to back up all databases
 ```
 
 - Images are tagged by the major PostgreSQL version supported: `12`, `13`, `14`, `15` or `16`.

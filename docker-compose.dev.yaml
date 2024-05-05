@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  backup:
+    image: krystofbe/postgres-backup-s3:16
+    environment:
+      SCHEDULE: '@weekly'                       # Optional: Schedule backup frequency using cron format
+      BACKUP_KEEP_DAYS: 7                       # Optional: Number of days to keep daily backups
+      BACKUP_KEEP_HOURS: 72                     # Optional: Number of hours to keep hourly backups
+      PASSPHRASE: passphrase                    # Optional: Passphrase for GPG encryption of backups
+      S3_REGION: eu-central-1                   # AWS region where the S3 bucket is hosted
+      S3_PREFIX: backup                         # Prefix under which backups will be stored in the S3 bucket
+      POSTGRES_HOST: host.docker.internal       # Hostname of the PostgreSQL server to back up
+      POSTGRES_USER: postgres                   # PostgreSQL user with permissions to perform backups
+      POSTGRES_PASSWORD: postgres               # Password for the PostgreSQL user
+      POSTGRES_BACKUP_ALL: true                 # Set to 'true' to enable backup of all databases
+    env_file:
+      - .env
