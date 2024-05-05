@@ -10,10 +10,12 @@ fi
 
 if [ -z "$BACKUP_KEEP_DAYS" ]; then
   echo "BACKUP_KEEP_DAYS is not set, please set it to the number of days you want to keep the backups."
+  exit 1
 fi
 
 if [ -z "$BACKUP_KEEP_HOURS" ]; then
   echo "BACKUP_KEEP_HOURS is not set, please set it to the number of hours you want to keep the hourly backups."
+  exit 1
 fi
 
 if [ -z "$POSTGRES_HOST" ]; then
