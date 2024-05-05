@@ -7,9 +7,16 @@ source /env.sh
 
 timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
 
+# List of databases to ignore
+IGNORE_DB_LIST="postgres template0 template1"
+
 # Function to dump a single database
 dump_database() {
   db_name=$1
+  if echo "$IGNORE_DB_LIST" | grep -qw "$db_name"; then
+    echo "Skipping backup of $db_name database, because it is in the ignore list."
+    return
+  fi
   echo "Creating backup of $db_name database..."
   SRC_FILE="db_${db_name}_${timestamp}.dump"
   DEST_FILE="${db_name}_${timestamp}.dump"

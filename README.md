@@ -18,6 +18,7 @@ services:
       BACKUP_KEEP_DAYS: 7     # optional
       BACKUP_KEEP_HOURS: 72   # optional
       PASSPHRASE: passphrase  # optional
+      IGNORE_DB_LIST: 'postgres template0 template1' # optional, with these as default
       S3_REGION: region
       S3_ACCESS_KEY_ID: key
       S3_SECRET_ACCESS_KEY: secret
