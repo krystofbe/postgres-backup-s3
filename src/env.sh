@@ -8,6 +8,14 @@ if [ "$POSTGRES_BACKUP_ALL" != "true" ] && [ -z "$POSTGRES_DATABASE" ]; then
   exit 1
 fi
 
+if [ -z "$BACKUP_KEEP_DAYS" ]; then
+  echo "BACKUP_KEEP_DAYS is not set, please set it to the number of days you want to keep the backups."
+fi
+
+if [ -z "$BACKUP_KEEP_HOURS" ]; then
+  echo "BACKUP_KEEP_HOURS is not set, please set it to the number of hours you want to keep the hourly backups."
+fi
+
 if [ -z "$POSTGRES_HOST" ]; then
   # https://docs.docker.com/network/links/#environment-variables
   if [ -n "$POSTGRES_PORT_5432_TCP_ADDR" ]; then
