@@ -38,12 +38,25 @@ services:
 - Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc.
 - The `POSTGRES_BACKUP_ALL` variable allows backing up all databases when set to "true".
 - This image now supports both hourly and daily backups.
-- If `BACKUP_KEEP_DAYS` is set, daily backups older than this many days will be deleted from S3.
-- If `BACKUP_KEEP_HOURS` is set, hourly backups older than this many hours will be deleted from S3.
-- Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
+# Backup Retention
+The backup system implements a dual retention strategy:
+
+- `BACKUP_KEEP_HOURS`: Determines how long regular backups are kept (e.g. 72 hours)
+- `BACKUP_KEEP_DAYS`: Determines how long daily backups are kept (e.g. 30 days)
+
+Using both values allows you to maintain frequent backups for recent history while keeping daily backups for longer-term retention. For example:
+
+- Set `BACKUP_KEEP_HOURS=24` to keep hourly backups for the last day
+- Set `BACKUP_KEEP_DAYS=30` to keep daily backups for a month
 
 ### Daily Backups
-The first backup of each day (created at midnight) is tagged as a daily backup and retained for the duration specified by `BACKUP_KEEP_DAYS`. Hourly backups are retained for the duration specified by `BACKUP_KEEP_HOURS`. This allows you to have both frequent hourly backups for recent recovery and less frequent daily backups for longer-term retention.
+The first backup of each calendar day is automatically tagged as a daily backup. This ensures one backup per day is retained for the duration specified by `BACKUP_KEEP_DAYS`, regardless of your backup schedule frequency. All other backups within that day follow the `BACKUP_KEEP_HOURS` retention period.
+
+For example, with hourly backups:
+- 24 hourly backups available for the last day
+- 30 daily backups available for the last month
+
+- Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
 
 ## Restore> **WARNING:** DATA LOSS! All database objects will be dropped and re-created.
 ### ... from latest backup

@@ -97,10 +97,20 @@ if [ -n "$BACKUP_KEEP_HOURS" ]; then
     xargs -r -n1 -t -I 'KEY' aws $aws_args s3 rm s3://"${S3_BUCKET}"/'KEY'
   echo "Hourly backup removal complete."
 fi
+# Get the date of the latest daily backup from S3
+latest_daily=$(aws $aws_args s3api list-objects \
+  --bucket "${S3_BUCKET}" \
+  --prefix "${S3_PREFIX}" \
+  --query "Contents[?contains(Key, '_daily')].LastModified | sort(@)[-1]" \
+  --output text)
 
-# Tag the first backup of the day as daily
-if [ $(date +"%H") -eq 0 ]; then
+# Get today's date in YYYY-MM-DD format
+today=$(date +%Y-%m-%d)
+
+# If no daily backup exists for today, tag this one as daily
+if [ -z "$latest_daily" ] || [ "$(date -d "$latest_daily" +%Y-%m-%d)" != "$today" ]; then
   echo "Tagging current backup as daily backup"
-  aws $aws_args s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}.dump" "s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}_daily.dump"
+  aws $aws_args s3 cp "s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}.dump" \
+    "s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}_daily.dump"
   aws $aws_args s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${POSTGRES_DATABASE}_${timestamp}.dump"
 fi
