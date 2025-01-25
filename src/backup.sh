@@ -81,7 +81,7 @@ dump_database() {
     $PGDUMP_EXTRA_OPTS >"$SRC_FILE"
 
   # Optionally encrypt + upload
-  process_file "$SRC_FILE" "$DEST_FILE"
+  process_file "$SRC_FILE" "$DEST_FILE" "$db_name"
 }
 
 #------------------------------------------------------------------------------
@@ -91,6 +91,7 @@ dump_database() {
 process_file() {
   src_file="$1"
   dest_file="$2"
+  db_name="$3"
 
   s3_uri_base="s3://${S3_BUCKET}/${S3_PREFIX}/${dest_file}"
 
