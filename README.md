@@ -14,10 +14,10 @@ services:
   backup:
     image: krystofbe/postgres-backup-s3:16
     environment:
-      SCHEDULE: '@weekly'     # optional
-      BACKUP_KEEP_DAYS: 7     # optional
-      BACKUP_KEEP_HOURS: 72   # optional
-      PASSPHRASE: passphrase  # optional
+      SCHEDULE: '@daily'     # optional
+      BACKUP_KEEP_DAYS: 30    # retain daily backups for 30 days
+      BACKUP_KEEP_HOURS: 48   # retain hourly backups for 48 hours
+      PASSPHRASE: passphrase  # optional, enables GPG encryption
       IGNORE_DB_LIST: 'postgres template0 template1' # optional, with these as default
       S3_REGION: region
       S3_ACCESS_KEY_ID: key
@@ -26,7 +26,6 @@ services:
       S3_PREFIX: backup
       POSTGRES_HOST: postgres
       POSTGRES_DATABASE: dbname
-      POSTGRES_BACKUP_ALL: true
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_BACKUP_ALL: true     # optional, set to 'true' to back up all databases
@@ -34,29 +33,17 @@ services:
 
 - Images are tagged by the major PostgreSQL version supported: `12`, `13`, `14`, `15` or `16`.
 - The `SCHEDULE` variable determines backup frequency. See go-cron schedules documentation [here](http://godoc.org/github.com/robfig/cron#hdr-Predefined_schedules). Omit to run the backup immediately and then exit.
-- If `PASSPHRASE` is provided, the backup will be encrypted using GPG.
-- Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc.
-- The `POSTGRES_BACKUP_ALL` variable allows backing up all databases when set to "true".
-- This image now supports both hourly and daily backups.
-# Backup Retention
-The backup system implements a dual retention strategy:
-
-- `BACKUP_KEEP_HOURS`: Determines how long regular backups are kept (e.g. 72 hours)
-- `BACKUP_KEEP_DAYS`: Determines how long daily backups are kept (e.g. 30 days)
-
-Using both values allows you to maintain frequent backups for recent history while keeping daily backups for longer-term retention. For example:
-
-- Set `BACKUP_KEEP_HOURS=24` to keep hourly backups for the last day
-- Set `BACKUP_KEEP_DAYS=30` to keep daily backups for a month
-
-### Daily Backups
-The first backup of each calendar day is automatically tagged as a daily backup. This ensures one backup per day is retained for the duration specified by `BACKUP_KEEP_DAYS`, regardless of your backup schedule frequency. All other backups within that day follow the `BACKUP_KEEP_HOURS` retention period.
-
-For example, with hourly backups:
-- 24 hourly backups available for the last day
-- 30 daily backups available for the last month
-
-- Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider.
+- The backup script implements a dual-retention policy:
+  - Hourly backups are created with timestamps in their filenames
+  - Daily backups are tagged with _daily suffix
+  - Only one daily backup per database is maintained per day
+- Retention settings control automatic cleanup:
+  - BACKUP_KEEP_HOURS: Hourly backups older than this many hours are deleted
+  - BACKUP_KEEP_DAYS: Daily backups older than this many days are deleted
+- When POSTGRES_BACKUP_ALL is set to "true", each database is backed up individually
+- If PASSPHRASE is provided, backups are encrypted using GPG
+- Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc
+- Set `S3_ENDPOINT` if you're using a non-AWS S3-compatible storage provider
 
 ## Restore> **WARNING:** DATA LOSS! All database objects will be dropped and re-created.
 ### ... from latest backup
@@ -101,4 +88,5 @@ These changes would have been difficult or impossible merge into @schickling's r
   - filter backups on S3 by database name
   - support encrypted (password-protected) backups
   - support for restoring from a specific backup by timestamp
-  - support for auto-removal of old backups
+  - dual-retention policy for hourly and daily backups
+  - automatic cleanup of old backups based on retention settings
