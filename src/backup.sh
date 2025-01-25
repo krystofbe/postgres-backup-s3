@@ -128,9 +128,6 @@ process_file() {
   #
   # For this snippet, let's parse it from $dest_file (a bit hacky but works).
 
-  # If your filenames always start with <db_name>_, we can do this:
-  db_name=$(echo "$dest_file" | cut -d_ -f1)
-
   # If you have multiple DBs, each DB has its own "latest"
   # => "insights_prod_latest.dump" or ".dump.gpg"
   # Let's see if we also ended with .gpg (i.e. if encryption is used).
