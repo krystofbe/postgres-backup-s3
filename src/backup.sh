@@ -1,85 +1,88 @@
-#! /bin/sh
+#!/bin/sh
 
 set -eu
 set -o pipefail
 
 source /env.sh
 
-# Current date/time strings
 timestamp=$(date +"%Y-%m-%dT%H:%M:%S")
 today=$(date +"%Y-%m-%d")
 
 IGNORE_DB_LIST="postgres template0 template1"
-ignore_db_list_sql=$(echo "$IGNORE_DB_LIST" | sed "s/ /','/g" | sed "s/^/'/" | sed "s/$/'/")
 
 #------------------------------------------------------------------------------
 # Function: check_if_daily_backup_exists
-#    Checks if an S3 object containing the pattern:
-#      db_<DBNAME>_<YYYY-MM-DD>_daily.dump OR
-#      db_<DBNAME>_<YYYY-MM-DD>_daily.dump.gpg
-#    already exists for the given database.
-#
-# Returns:
-#   0 (true)  - if a daily backup is found
-#   1 (false) - if no daily backup is found
+#   Checks if there's *any* object in S3 with:
+#       db_<DBNAME>_<YYYY-MM-DD>_..._daily.dump
+#   or   db_<DBNAME>_<YYYY-MM-DD>_..._daily.dump.gpg
+#   If so, we say a "daily" backup already exists for *today*.
 #------------------------------------------------------------------------------
 check_if_daily_backup_exists() {
   db_name="$1"
-  aws $aws_args s3api list-objects \
-    --bucket "${S3_BUCKET}" \
-    --prefix "${S3_PREFIX}/db_${db_name}_${today}_daily.dump" \
-    --query 'Contents[].Key' \
-    --output text 2>/dev/null | grep -q "${S3_PREFIX}/db_${db_name}_${today}_daily.dump" && return 0
 
-  aws $aws_args s3api list-objects \
-    --bucket "${S3_BUCKET}" \
-    --prefix "${S3_PREFIX}/db_${db_name}_${today}_daily.dump.gpg" \
-    --query 'Contents[].Key' \
-    --output text 2>/dev/null | grep -q "${S3_PREFIX}/db_${db_name}_${today}_daily.dump.gpg" && return 0
+  # We'll look for any object that starts with db_<db_name>_<YYYY-MM-DD>
+  # and contains "_daily.dump" or "_daily.dump.gpg" anywhere after that.
+  # If found, return 0 => "daily backup exists"
+  found_daily=$(
+    aws $aws_args s3api list-objects \
+      --bucket "${S3_BUCKET}" \
+      --prefix "${S3_PREFIX}/db_${db_name}_${today}" \
+      --query "Contents[? (contains(Key, '_daily.dump') || contains(Key, '_daily.dump.gpg')) ].Key" \
+      --output text 2>/dev/null || true
+  )
 
-  return 1
+  if [ -n "$found_daily" ] && [ "$found_daily" != "None" ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 #------------------------------------------------------------------------------
 # Function: dump_database
-#   Dumps a single database to a local file.
-#   If a daily backup has not yet been created for the day,
-#   suffix is _daily. Otherwise, no suffix (hourly).
+#   Dumps a single database to local .dump file.
+#   - The first time each day => daily backup (suffix _daily).
+#   - Otherwise => hourly backup (suffix _hourly).
 #------------------------------------------------------------------------------
 dump_database() {
   db_name="$1"
 
-  # Skip ignored DBs
+  # Skip if in the ignore list
   if echo "$IGNORE_DB_LIST" | grep -qw "$db_name"; then
     echo "Skipping backup of $db_name (ignore list)."
     return
   fi
 
-  echo "Starting backup of database: $db_name"
+  echo "Starting backup of database: $db_name ..."
 
-  # Decide if we do a daily or hourly backup
-  suffix=""
+  # Decide if we do a daily or an hourly backup
+  suffix="_hourly"
   if ! check_if_daily_backup_exists "$db_name"; then
     suffix="_daily"
-    echo "No daily backup found for '${db_name}' on ${today}. This backup will be tagged as daily."
+    echo "No daily backup found yet for '${db_name}' on ${today}. This backup will be tagged as daily."
   else
-    echo "Daily backup already exists for '${db_name}'. Proceeding with an hourly (regular) backup."
+    echo "Daily backup already exists for '${db_name}' on ${today}. Proceeding with an hourly backup."
   fi
 
-  # Prepare filenames
+  # Construct filenames
   SRC_FILE="db_${db_name}_${timestamp}${suffix}.dump"
   DEST_FILE="${db_name}_${timestamp}${suffix}.dump"
 
   # Perform pg_dump
-  echo pg_dump >"$SRC_FILE"
+  pg_dump --format=custom \
+    -h "$POSTGRES_HOST" \
+    -p "$POSTGRES_PORT" \
+    -U "$POSTGRES_USER" \
+    -d "$db_name" \
+    $PGDUMP_EXTRA_OPTS >"$SRC_FILE"
 
-  # Encrypt (if PASSPHRASE is set) and upload
+  # Encrypt and upload to S3
   process_file "$SRC_FILE" "$DEST_FILE"
 }
 
 #------------------------------------------------------------------------------
 # Function: process_file
-#   Optionally encrypts a dump file with GPG, then uploads to S3.
+#   Optionally encrypt a file with GPG, then uploads it to S3.
 #------------------------------------------------------------------------------
 process_file() {
   src_file="$1"
@@ -103,13 +106,13 @@ process_file() {
 }
 
 #------------------------------------------------------------------------------
-# Main Backup Section
-#   If POSTGRES_BACKUP_ALL == "true", backup each DB individually,
-#   otherwise just do the single database indicated by $POSTGRES_DATABASE.
+# Main Backup Logic
+#   If POSTGRES_BACKUP_ALL == "true", we backup every non-template DB individually.
+#   Otherwise, just the single DB defined by POSTGRES_DATABASE.
 #------------------------------------------------------------------------------
 if [ "${POSTGRES_BACKUP_ALL:-}" = "true" ]; then
   echo "Backing up all non-template databases individually..."
-  databases=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -t -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN (${ignore_db_list_sql});")
+  databases=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -t -c "SELECT datname FROM pg_database WHERE datistemplate = false;")
   for db in $databases; do
     dump_database "$db"
   done
@@ -122,9 +125,8 @@ echo "All backups completed."
 #------------------------------------------------------------------------------
 # Retention Cleanup
 #   1) Remove daily backups older than BACKUP_KEEP_DAYS
-#   2) Remove hourly backups older than BACKUP_KEEP_HOURS
+#   2) Remove hourly (and legacy) backups older than BACKUP_KEEP_HOURS
 #------------------------------------------------------------------------------
-
 current_time=$(date +%s)
 
 #------------------------------
@@ -132,49 +134,45 @@ current_time=$(date +%s)
 #------------------------------
 if [ -n "${BACKUP_KEEP_DAYS:-}" ] && [ "$BACKUP_KEEP_DAYS" -gt 0 ]; then
   echo "Removing daily backups older than $BACKUP_KEEP_DAYS days..."
-  # Compute the cutoff date
   cutoff_days_ago=$(date -d "@$((current_time - 86400 * BACKUP_KEEP_DAYS))" +"%Y-%m-%dT%H:%M:%S")
 
-  # This query finds all objects where:
-  #   - The Key contains "_daily.dump" or "_daily.dump.gpg"
-  #   - LastModified is older than the computed cutoff date
+  # Find any object whose key contains '_daily.dump' (or .dump.gpg)
+  # with LastModified older than cutoff.
   daily_removal_keys=$(
     aws $aws_args s3api list-objects \
       --bucket "${S3_BUCKET}" \
       --prefix "${S3_PREFIX}/" \
-      --query "Contents[? (contains(Key, '_daily.dump') && LastModified<=\`$cutoff_days_ago\`) ].Key" \
-      --output text 2>/dev/null
+      --query "Contents[? (LastModified<=\`$cutoff_days_ago\`) && (contains(Key, '_daily.dump')) ].Key" \
+      --output text 2>/dev/null || true
   )
 
-  # Remove them
   for key in $daily_removal_keys; do
+    [ "$key" = "None" ] && continue
     echo "Removing old daily backup: $key"
     aws $aws_args s3 rm "s3://${S3_BUCKET}/${key}"
   done
 fi
 
 #------------------------------
-# 2) Hourly / regular backup cleanup
+# 2) Hourly + legacy backup cleanup
 #------------------------------
 if [ -n "${BACKUP_KEEP_HOURS:-}" ] && [ "$BACKUP_KEEP_HOURS" -gt 0 ]; then
-  echo "Removing hourly backups older than $BACKUP_KEEP_HOURS hours..."
-  # Compute the cutoff date/time
+  echo "Removing hourly (and legacy) backups older than $BACKUP_KEEP_HOURS hours..."
   cutoff_hours_ago=$(date -d "@$((current_time - 3600 * BACKUP_KEEP_HOURS))" +"%Y-%m-%dT%H:%M:%S")
 
-  # This query finds all objects where:
-  #   - The Key does NOT contain "_daily.dump"
-  #   - LastModified is older than the computed cutoff date/time
+  # We'll remove any backup that does NOT contain '_daily.dump'
+  # That includes the new `_hourly` backups AND older "no-suffix" backups.
   hourly_removal_keys=$(
     aws $aws_args s3api list-objects \
       --bucket "${S3_BUCKET}" \
       --prefix "${S3_PREFIX}/" \
-      --query "Contents[? (!contains(Key, '_daily.dump') && LastModified<=\`$cutoff_hours_ago\`) ].Key" \
-      --output text 2>/dev/null
+      --query "Contents[? (LastModified<=\`$cutoff_hours_ago\`) && (!contains(Key, '_daily.dump')) ].Key" \
+      --output text 2>/dev/null || true
   )
 
-  # Remove them
   for key in $hourly_removal_keys; do
-    echo "Removing old hourly backup: $key"
+    [ "$key" = "None" ] && continue
+    echo "Removing old hourly/legacy backup: $key"
     aws $aws_args s3 rm "s3://${S3_BUCKET}/${key}"
   done
 fi
