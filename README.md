@@ -40,6 +40,7 @@ services:
 - Retention settings control automatic cleanup:
   - BACKUP_KEEP_HOURS: Hourly backups older than this many hours are deleted
   - BACKUP_KEEP_DAYS: Daily backups older than this many days are deleted
+  - Each backup is also copied to a "latest" version (e.g., dbname_latest.dump or dbname_latest.dump.gpg)
 - When POSTGRES_BACKUP_ALL is set to "true", each database is backed up individually
 - If PASSPHRASE is provided, backups are encrypted using GPG
 - Run `docker exec <container name> sh backup.sh` to trigger a backup ad-hoc

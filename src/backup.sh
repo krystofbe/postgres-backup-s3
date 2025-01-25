@@ -108,6 +108,56 @@ process_file() {
   echo "Uploading backup to: $s3_uri"
   aws $aws_args s3 cp "$local_file" "$s3_uri"
   rm "$local_file"
+
+  # ---------------------------------------------------------------------------
+  # Now do a server-side COPY in S3 to "latest"
+  # We'll infer the DB name from $dest_file by taking everything
+  # up to the first '_' so that "insights_prod" becomes $db_name.
+  # Alternatively, pass $db_name into process_file if that is easier.
+  # ---------------------------------------------------------------------------
+  # Example: if $dest_file="insights_prod_2025-01-25T21:28:00_daily.dump"
+  # you can parse out "insights_prod" from the front. Or, simpler:
+  #   - Just keep the entire name but replace the date/time with "latest".
+  #
+  # Let's do a quick approach:
+  #   latest_key="${db_name}_latest.dump" or ".dump.gpg"
+  #
+  # But for clarity, let's pass DB name as a separate argument. Then:
+  # process_file "$SRC_FILE" "$DEST_FILE" "$db_name"
+  #
+  # For this snippet, let's parse it from $dest_file (a bit hacky but works).
+
+  # If your filenames always start with <db_name>_, we can do this:
+  db_name=$(echo "$dest_file" | cut -d_ -f1)
+
+  # If you have multiple DBs, each DB has its own "latest"
+  # => "insights_prod_latest.dump" or ".dump.gpg"
+  # Let's see if we also ended with .gpg (i.e. if encryption is used).
+  # We'll check if $s3_uri ends with .gpg:
+  if echo "$s3_uri" | grep -q ".gpg$"; then
+    latest_key="${db_name}_latest.dump.gpg"
+  else
+    latest_key="${db_name}_latest.dump"
+  fi
+
+  echo "Copying newest backup to 'latest' object: ${latest_key}"
+
+  # Now do a server-side copy
+  # "copy-source" must include bucket + key. We know $dest_file might have .gpg appended
+  # so let's get the exact "dest key" from $s3_uri.
+  # $s3_uri is "s3://BUCKET/PREFIX/filename.ext"
+  # we can strip off "s3://BUCKET/" to get the rest as our "copy-source"
+
+  copy_source="$(echo "$s3_uri" | sed "s|^s3://${S3_BUCKET}/||")"
+  # Example: "backup/insights_prod_2025-01-25T21:28:00_daily.dump.gpg"
+
+  # Perform the copy
+  aws $aws_args s3api copy-object \
+    --copy-source "${S3_BUCKET}/${copy_source}" \
+    --bucket "${S3_BUCKET}" \
+    --key "${S3_PREFIX}/${latest_key}" >/dev/null
+
+  echo "=> S3 'latest' object updated: s3://${S3_BUCKET}/${S3_PREFIX}/${latest_key}"
 }
 
 #------------------------------------------------------------------------------
